@@ -1,0 +1,17 @@
+{
+  "user": {
+    "name": "Alex Voorhees",
+    "age": 29,
+    "address": {
+      "street": "Camp Crystal Lake Rd",
+      "city": "Blairstown",
+      "zip": "07825"
+    },
+    "preferences": {
+      "theme": "dark",
+      "notifications": true,
+      "favoriteDays": ["Friday", "Thursday"]
+    }
+  },
+  "accountActive": true
+}

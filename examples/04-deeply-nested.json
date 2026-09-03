@@ -1,0 +1,17 @@
+{
+  "campCrystalLake": {
+    "mainCabin": {
+      "storageRoom": {
+        "lockedChest": {
+          "innerBox": {
+            "note": "You really dug this deep? Respect.",
+            "coordinates": {
+              "lat": 41.0,
+              "lng": -74.8
+            }
+          }
+        }
+      }
+    }
+  }
+}

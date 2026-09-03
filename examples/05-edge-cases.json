@@ -1,0 +1,11 @@
+{
+  "emptyObject": {},
+  "emptyArray": [],
+  "unicodeText": "Vörhees – café – 日本語 – 🔪",
+  "bigNumber": 9007199254740991,
+  "negativeNumber": -13,
+  "floatNumber": 3.14159,
+  "booleans": [true, false],
+  "nullValue": null,
+  "mixedArray": [1, "two", false, null, { "nested": true }]
+}
