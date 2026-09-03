@@ -1,0 +1,191 @@
+:root {
+  --bg: #f4f4f2;
+  --surface: #ffffff;
+  --surface-2: #ececea;
+  --text: #1a1a1a;
+  --text-secondary: #5a5a58;
+  --border: #dcdcda;
+  --accent: #3b82f6;
+  --accent-text: #ffffff;
+  --danger: #d64545;
+}
+html[data-theme="dark"] {
+  --bg: #131313;
+  --surface: #1c1c1c;
+  --surface-2: #262626;
+  --text: #f0f0ee;
+  --text-secondary: #a3a39f;
+  --border: #333331;
+  --accent: #4f8cff;
+  --accent-text: #0a0a0a;
+  --danger: #ff6b6b;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  padding: 16px;
+  padding-bottom: 60px;
+  max-width: 720px;
+  margin: 0 auto;
+  transition: background .2s, color .2s;
+}
+
+header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
+h1 { font-size: 20px; font-weight: 700; margin: 0; }
+.sub { color: var(--text-secondary); font-size: 13px; margin: 2px 0 0; }
+.header-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+button.icon {
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; width: 36px; height: 36px; font-size: 16px; cursor: pointer;
+}
+
+/* ---------- Welcome screen ---------- */
+.drop {
+  border: 2px dashed var(--border); border-radius: 12px; padding: 28px 16px; text-align: center;
+  background: var(--surface); margin-bottom: 14px; cursor: pointer;
+}
+.drop.drag { border-color: var(--accent); background: var(--surface-2); }
+.drop p { margin: 0; color: var(--text-secondary); font-size: 14px; }
+.drop strong { color: var(--text); }
+input[type=file] { display: none; }
+
+.welcome-alt { display: flex; flex-direction: column; gap: 8px; align-items: stretch; margin-bottom: 8px; }
+.secondary-btn {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  padding: 12px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.secondary-btn:active { opacity: .8; }
+.link-btn {
+  background: none; border: none; color: var(--accent); font-size: 13px;
+  padding: 6px; cursor: pointer; text-decoration: underline;
+}
+
+.paste-area { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.paste-area textarea {
+  min-height: 140px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 10px; font-family: ui-monospace, monospace; font-size: 13px; resize: vertical;
+}
+
+.welcome-examples { margin-top: 22px; font-size: 12.5px; color: var(--text-secondary); }
+.welcome-examples code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+
+/* ---------- App screen ---------- */
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.filename { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toolbar-actions { display: flex; gap: 6px; }
+
+.mini-btn {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 7px; padding: 6px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.mini-btn:active { opacity: .8; }
+.mini-btn.danger { color: var(--danger); border-color: var(--danger); background: none; }
+
+.segment {
+  display: flex; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 3px; margin-bottom: 12px; gap: 3px;
+}
+.segment button {
+  flex: 1; background: none; border: none; color: var(--text-secondary);
+  padding: 8px 6px; border-radius: 7px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.segment button.active { background: var(--accent); color: var(--accent-text); }
+
+.error-banner {
+  background: rgba(214, 69, 69, .12); border: 1px solid var(--danger); color: var(--danger);
+  border-radius: 8px; padding: 10px 12px; font-size: 12.5px; margin-bottom: 12px; word-break: break-word;
+}
+
+.view-pane { display: none; }
+.view-pane.active { display: block; }
+
+/* ---------- Tree view ---------- */
+.tree-node { margin-left: 0; }
+.tree-children { margin-left: 18px; border-left: 1px dashed var(--border); padding-left: 10px; }
+.tree-children.collapsed { display: none; }
+.tree-line { display: flex; align-items: center; gap: 6px; padding: 4px 0; flex-wrap: wrap; }
+.tree-toggle {
+  background: none; border: none; color: var(--text-secondary); cursor: pointer;
+  width: 18px; font-size: 12px; flex-shrink: 0; padding: 0;
+}
+.tree-spacer { width: 18px; flex-shrink: 0; }
+.tree-key, .tree-root-label {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 4px 7px; font-size: 13px; font-weight: 600; min-width: 60px; max-width: 160px;
+}
+.tree-root-label { background: none; border: none; padding: 4px 2px; font-style: italic; color: var(--text-secondary); }
+.tree-value {
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 4px 7px; font-size: 13px; flex: 1; min-width: 90px;
+}
+.type-badge {
+  border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-secondary); font-size: 11px; padding: 3px 8px; cursor: pointer;
+}
+.type-badge.type-object { color: var(--accent); }
+.type-badge.type-array { color: var(--accent); }
+.count-badge { font-size: 11.5px; color: var(--text-secondary); }
+.tree-actions { margin-left: auto; display: flex; gap: 4px; }
+.tree-add-row { padding: 6px 0 6px 24px; }
+
+/* ---------- Table view ---------- */
+.nested-table { width: 100%; border-collapse: collapse; margin: 4px 0; }
+.nested-table td {
+  border: 1px solid var(--border); padding: 6px 8px; vertical-align: top; font-size: 13px;
+}
+.table-key-cell { width: 30%; font-weight: 600; }
+.table-key-input {
+  width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 4px 6px; font-size: 13px;
+}
+.table-value-cell .nested-table { margin: 0; }
+.table-value-input {
+  width: 100%; background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 4px 6px; font-size: 13px; margin-top: 4px;
+}
+.table-action-cell { width: 36px; text-align: center; }
+.value-cell-controls { display: flex; flex-direction: column; gap: 4px; }
+.mini-type-select {
+  background: var(--surface); border: 1px solid var(--border); color: var(--text-secondary);
+  border-radius: 6px; padding: 3px 4px; font-size: 11px;
+}
+.table-primitive-root { padding: 10px 0; }
+
+/* ---------- Code view ---------- */
+#codeMount { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; min-height: 320px; }
+.CodeMirror { height: 400px; font-size: 13px; }
+.code-fallback-note {
+  font-size: 12px; color: var(--text-secondary); background: var(--surface-2);
+  border-radius: 8px; padding: 8px 10px; margin: 0 0 8px;
+}
+.code-fallback-textarea {
+  width: 100%; min-height: 400px; background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  border-radius: 10px; padding: 12px; font-family: ui-monospace, monospace; font-size: 13px; resize: vertical;
+}
+
+/* ---------- Graph view ---------- */
+.graph-scroll { overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin-bottom: 12px; }
+.graph-svg { display: block; }
+.graph-node rect { fill: var(--surface-2); stroke: var(--border); stroke-width: 1; }
+.graph-node.type-object rect, .graph-node.type-array rect { stroke: var(--accent); }
+.graph-node text { fill: var(--text); font-size: 11px; }
+.graph-node { cursor: pointer; }
+.graph-node:hover rect { stroke: var(--accent); }
+.graph-edge { stroke: var(--border); stroke-width: 1.5; }
+.graph-details {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.graph-details-empty { color: var(--text-secondary); font-size: 13px; margin: 0; }
+.graph-details-title { font-weight: 700; font-size: 13px; word-break: break-word; }
+.graph-details input, .graph-details select {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 6px 8px; font-size: 13px;
+}
+
+footer { text-align: center; color: var(--text-secondary); font-size: 12px; margin-top: 24px; }

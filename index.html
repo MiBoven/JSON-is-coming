@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="theme-color" content="#131313">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="icon" href="/favicon.ico">
+<link rel="stylesheet" href="vendor/codemirror/codemirror.css">
+<link rel="stylesheet" href="style.css">
+<title>JSON is Coming</title>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>JSON is Coming</h1>
+    <p class="sub">But Still Thursday though</p>
+  </div>
+  <div class="header-actions">
+    <button class="icon" id="fullscreenToggle" title="Toggle fullscreen">⛶</button>
+    <button class="icon" id="themeToggle" title="Toggle theme">◐</button>
+  </div>
+</header>
+
+<!-- ===== Welcome screen ===== -->
+<section id="welcomeScreen">
+  <div class="drop" id="dropZone">
+    <p><strong>Tap to choose a JSON file</strong><br>or drag and drop it here</p>
+    <input type="file" id="fileInput" accept="application/json,.json">
+  </div>
+
+  <div class="welcome-alt">
+    <button class="secondary-btn" id="newJsonBtn">+ Start a new, empty JSON</button>
+    <button class="link-btn" id="pasteToggleBtn">Paste JSON text instead</button>
+  </div>
+
+  <div id="pasteArea" class="paste-area" style="display:none;">
+    <textarea id="pasteText" placeholder='{ "hello": "world" }'></textarea>
+    <button class="secondary-btn" id="pasteLoadBtn">Load pasted JSON</button>
+  </div>
+
+  <div class="welcome-examples">
+    <p>New here? Grab one of the <code>examples/</code> files from the repo to try every view.</p>
+  </div>
+</section>
+
+<!-- ===== App screen ===== -->
+<section id="appScreen" style="display:none;">
+  <div class="toolbar">
+    <span class="filename" id="fileNameLabel">untitled.json</span>
+    <div class="toolbar-actions">
+      <button class="mini-btn" id="copyBtn">Copy</button>
+      <button class="mini-btn" id="downloadBtn">Download</button>
+      <button class="mini-btn" id="backBtn">Close</button>
+    </div>
+  </div>
+
+  <div class="segment view-tabs">
+    <button type="button" class="seg-btn view-tab active" data-view="Tree">Tree</button>
+    <button type="button" class="seg-btn view-tab" data-view="Table">Table</button>
+    <button type="button" class="seg-btn view-tab" data-view="Code">Code</button>
+    <button type="button" class="seg-btn view-tab" data-view="Graph">Graph</button>
+  </div>
+
+  <p class="error-banner" id="errorBanner" style="display:none;"></p>
+
+  <div class="view-pane active" id="viewTree"></div>
+
+  <div class="view-pane" id="viewTable"></div>
+
+  <div class="view-pane" id="viewCode">
+    <p class="code-fallback-note" id="codeFallbackNote" style="display:none;">
+      Plain-text mode — add CodeMirror to <code>vendor/codemirror/</code> for syntax highlighting (see README).
+    </p>
+    <div id="codeMount"></div>
+  </div>
+
+  <div class="view-pane" id="viewGraph">
+    <div class="graph-scroll" id="graphCanvas"></div>
+    <div class="graph-details" id="graphDetails">
+      <p class="graph-details-empty">Tap a node above to view or edit it.</p>
+    </div>
+  </div>
+</section>
+
+<footer>JSON is Coming · v0.1.0</footer>
+
+<script src="vendor/codemirror/codemirror.js"></script>
+<script src="vendor/codemirror/javascript.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
