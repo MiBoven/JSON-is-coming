@@ -28,8 +28,8 @@
 <!-- ===== Welcome screen ===== -->
 <section id="welcomeScreen">
   <div class="drop" id="dropZone">
-    <p><strong>Tap to choose a JSON file</strong><br>or drag and drop it here</p>
-    <input type="file" id="fileInput" accept="application/json,.json">
+    <p><strong>Tap to choose a JSON file</strong><br>or drag and drop it here<br><span class="drop-hint">(pick 2 files at once to compare them)</span></p>
+    <input type="file" id="fileInput" accept="application/json,.json" multiple>
   </div>
 
   <div class="welcome-alt">
@@ -47,22 +47,64 @@
   </div>
 </section>
 
+<!-- ===== Compare screen ===== -->
+<section id="compareScreen" style="display:none;">
+  <div class="compare-header">
+    <div class="compare-file-label"><span class="compare-dot a"></span><span id="compareNameA"></span></div>
+    <div class="compare-file-label"><span class="compare-dot b"></span><span id="compareNameB"></span></div>
+  </div>
+  <label class="compare-toggle-row">
+    <input type="checkbox" id="compareShowUnchanged">
+    Show unchanged values too
+  </label>
+  <div id="compareTableContainer"></div>
+  <div class="compare-actions">
+    <button class="secondary-btn" id="useABtn">Use File A</button>
+    <button class="secondary-btn" id="useBBtn">Use File B</button>
+    <button class="link-btn" id="cancelCompareBtn">Cancel</button>
+  </div>
+</section>
+
 <!-- ===== App screen ===== -->
 <section id="appScreen" style="display:none;">
+  <div class="post-load-drop" id="postLoadDropZone">
+    <span>+ Drop another JSON here to replace or compare</span>
+    <input type="file" id="postLoadFileInput" accept="application/json,.json">
+  </div>
+
+  <div class="post-load-prompt" id="postLoadPrompt" style="display:none;">
+    <span id="postLoadPromptText"></span>
+    <div class="post-load-prompt-actions">
+      <button class="mini-btn" id="postLoadReplaceBtn">Replace current file</button>
+      <button class="mini-btn" id="postLoadCompareBtn">Compare with current file</button>
+      <button class="link-btn" id="postLoadCancelBtn">Cancel</button>
+    </div>
+  </div>
+
   <div class="toolbar">
-    <span class="filename" id="fileNameLabel">untitled.json</span>
+    <input type="text" class="filename-input" id="fileNameLabel" value="untitled.json" title="Click to rename">
     <div class="toolbar-actions">
-      <button class="mini-btn" id="copyBtn">Copy</button>
-      <button class="mini-btn" id="downloadBtn">Download</button>
-      <button class="mini-btn" id="backBtn">Close</button>
+      <button class="mini-btn icon-btn" id="undoBtn" title="Undo" disabled>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h9a5 5 0 0 1 0 10H9"/><path d="M8 6L4 10l4 4"/></svg>
+      </button>
+      <button class="mini-btn icon-btn" id="redoBtn" title="Redo" disabled>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10h-9a5 5 0 0 0 0 10h4"/><path d="M16 6l4 4-4 4"/></svg>
+      </button>
+      <button class="mini-btn icon-btn" id="copyBtn" title="Copy JSON to clipboard">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+      <button class="mini-btn icon-btn" id="downloadBtn" title="Download as .json">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
+      </button>
+      <button class="mini-btn danger" id="backBtn">Close file</button>
     </div>
   </div>
 
   <div class="segment view-tabs">
     <button type="button" class="seg-btn view-tab active" data-view="Tree">Tree</button>
-    <button type="button" class="seg-btn view-tab" data-view="Table">Table</button>
-    <button type="button" class="seg-btn view-tab" data-view="Code">Code</button>
+    <button type="button" class="seg-btn view-tab view-tab-code" data-view="Code">&lt;/&gt; Code</button>
     <button type="button" class="seg-btn view-tab" data-view="Graph">Graph</button>
+    <button type="button" class="seg-btn view-tab" data-view="Table">Table</button>
   </div>
 
   <p class="error-banner" id="errorBanner" style="display:none;"></p>
@@ -79,6 +121,11 @@
   </div>
 
   <div class="view-pane" id="viewGraph">
+    <div class="graph-zoom-controls">
+      <button class="mini-btn" id="graphZoomOut">−</button>
+      <button class="mini-btn" id="graphZoomFit">Fit</button>
+      <button class="mini-btn" id="graphZoomIn">+</button>
+    </div>
     <div class="graph-scroll" id="graphCanvas"></div>
     <div class="graph-details" id="graphDetails">
       <p class="graph-details-empty">Tap a node above to view or edit it.</p>
@@ -86,7 +133,7 @@
   </div>
 </section>
 
-<footer>JSON is Coming · v0.1.0</footer>
+<footer>JSON is Coming · v0.2.0</footer>
 
 <script src="vendor/codemirror/codemirror.js"></script>
 <script src="vendor/codemirror/javascript.js"></script>

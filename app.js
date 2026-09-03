@@ -1,3 +1,15 @@
+// ---------- App state (declared first: setTheme() below reads cmEditor immediately) ----------
+let root = null;              // the JSON data being edited
+let currentFileName = 'untitled.json';
+let cmEditor = null;
+let cmDebounceTimer = null;
+const STORAGE_KEY = 'jsoniscoming-session';
+
+// Undo/redo history: array of JSON-string snapshots
+let history = [];
+let historyIndex = -1;
+let suppressHistory = false;
+
 // ---------- Theme & fullscreen ----------
 const htmlEl = document.documentElement;
 const themeToggle = document.getElementById('themeToggle');
@@ -5,6 +17,7 @@ function setTheme(t) {
   htmlEl.setAttribute('data-theme', t);
   localStorage.setItem('jsoniscoming-theme', t);
   themeToggle.textContent = t === 'dark' ? '◐' : '◑';
+  if (cmEditor) cmEditor.setOption('theme', t === 'dark' ? 'jsoniscoming-dark' : 'default');
 }
 setTheme(localStorage.getItem('jsoniscoming-theme') || 'dark');
 themeToggle.addEventListener('click', () => {
@@ -14,19 +27,6 @@ themeToggle.addEventListener('click', () => {
 document.getElementById('fullscreenToggle').addEventListener('click', () => {
   if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
   else document.exitFullscreen();
-});
-
-// ---------- App state ----------
-let root = null;              // the JSON data being edited
-let currentFileName = 'untitled.json';
-let cmEditor = null;
-let cmDebounceTimer = null;
-
-window.addEventListener('beforeunload', (e) => {
-  if (root !== null) {
-    e.preventDefault();
-    e.returnValue = '';
-  }
 });
 
 // ---------- Path helpers ----------
@@ -80,7 +80,7 @@ function renameKey(path, newKey) {
   });
   Object.keys(parent).forEach((k) => delete parent[k]);
   Object.assign(parent, rebuilt);
-  renderAll();
+  afterChange();
 }
 
 function updateValue(path, inputValue, originalType) {
@@ -98,7 +98,7 @@ function updateValue(path, inputValue, originalType) {
   }
   if (path.length === 0) root = newValue;
   else setAtPath(root, path, newValue);
-  renderAll();
+  afterChange();
 }
 
 function changeType(path, newType) {
@@ -106,7 +106,7 @@ function changeType(path, newType) {
   const nv = defaults[newType];
   if (path.length === 0) root = nv;
   else setAtPath(root, path, nv);
-  renderAll();
+  afterChange();
 }
 
 // ---------- Shared value/type control (used by table + graph views) ----------
@@ -224,7 +224,7 @@ function renderTreeNode(keyLabel, value, path, isRoot) {
     delBtn.className = 'mini-btn danger';
     delBtn.textContent = '×';
     delBtn.title = 'Delete';
-    delBtn.addEventListener('click', () => { deleteAtPath(root, path); renderAll(); });
+    delBtn.addEventListener('click', () => { deleteAtPath(root, path); afterChange(); });
     actions.appendChild(delBtn);
   }
   line.appendChild(actions);
@@ -245,7 +245,7 @@ function renderTreeNode(keyLabel, value, path, isRoot) {
     addBtn.addEventListener('click', () => {
       if (type === 'array') value.push('');
       else value[uniqueKey(value, 'newKey')] = '';
-      renderAll();
+      afterChange();
     });
     addRow.appendChild(addBtn);
     childrenEl.appendChild(addRow);
@@ -307,7 +307,7 @@ function buildTableForValue(value, path) {
     const delBtn = document.createElement('button');
     delBtn.className = 'mini-btn danger';
     delBtn.textContent = '×';
-    delBtn.addEventListener('click', () => { deleteAtPath(root, path.concat([k])); renderAll(); });
+    delBtn.addEventListener('click', () => { deleteAtPath(root, path.concat([k])); afterChange(); });
     actionTd.appendChild(delBtn);
 
     tr.appendChild(keyTd);
@@ -325,7 +325,7 @@ function buildTableForValue(value, path) {
   addBtn.addEventListener('click', () => {
     if (type === 'array') value.push('');
     else value[uniqueKey(value, 'newKey')] = '';
-    renderAll();
+    afterChange();
   });
   addTd.appendChild(addBtn);
   addTr.appendChild(addTd);
@@ -335,6 +335,10 @@ function buildTableForValue(value, path) {
 }
 
 // ---------- Graph view ----------
+let graphZoom = 1;
+let graphNaturalWidth = 0;
+let graphNaturalHeight = 0;
+
 function maxDepth(value, depth) {
   depth = depth || 0;
   const type = typeOf(value);
@@ -385,10 +389,11 @@ function renderGraph() {
 
   const width = Math.max(320, leafCounter * leafWidth + 40);
   const height = (maxDepth(root) + 1) * levelHeight + 60;
+  graphNaturalWidth = width;
+  graphNaturalHeight = height;
 
   const svgNS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(svgNS, 'svg');
-  svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
   svg.setAttribute('width', width);
   svg.setAttribute('height', height);
   svg.classList.add('graph-svg');
@@ -425,8 +430,45 @@ function renderGraph() {
     svg.appendChild(g);
   });
 
-  container.appendChild(svg);
+  const wrapper = document.createElement('div');
+  wrapper.className = 'graph-zoom-wrapper';
+  wrapper.id = 'graphZoomWrapper';
+  wrapper.appendChild(svg);
+  container.appendChild(wrapper);
+
+  fitGraphToView(true);
 }
+
+function applyGraphZoom() {
+  const wrapper = document.getElementById('graphZoomWrapper');
+  if (wrapper) wrapper.style.transform = 'scale(' + graphZoom + ')';
+}
+
+function fitGraphToView(centerTop) {
+  const container = document.getElementById('graphCanvas');
+  const containerWidth = container.clientWidth || 320;
+  if (graphNaturalWidth > 0) {
+    graphZoom = Math.min(1, (containerWidth - 16) / graphNaturalWidth);
+  } else {
+    graphZoom = 1;
+  }
+  applyGraphZoom();
+  requestAnimationFrame(() => {
+    const scaledWidth = graphNaturalWidth * graphZoom;
+    container.scrollLeft = Math.max(0, (scaledWidth - containerWidth) / 2);
+    if (centerTop) container.scrollTop = 0;
+  });
+}
+
+document.getElementById('graphZoomIn').addEventListener('click', () => {
+  graphZoom = Math.min(3, graphZoom + 0.15);
+  applyGraphZoom();
+});
+document.getElementById('graphZoomOut').addEventListener('click', () => {
+  graphZoom = Math.max(0.15, graphZoom - 0.15);
+  applyGraphZoom();
+});
+document.getElementById('graphZoomFit').addEventListener('click', () => fitGraphToView(false));
 
 function selectGraphNode(path) {
   const panel = document.getElementById('graphDetails');
@@ -458,7 +500,7 @@ function selectGraphNode(path) {
     addBtn.addEventListener('click', () => {
       if (type === 'array') value.push('');
       else value[uniqueKey(value, 'newKey')] = '';
-      renderAll();
+      afterChange();
       selectGraphNode(path);
     });
     panel.appendChild(addBtn);
@@ -470,7 +512,7 @@ function selectGraphNode(path) {
     delBtn.textContent = 'Delete this node';
     delBtn.addEventListener('click', () => {
       deleteAtPath(root, path);
-      renderAll();
+      afterChange();
       panel.innerHTML = '';
       const empty = document.createElement('p');
       empty.className = 'graph-details-empty';
@@ -492,6 +534,7 @@ function initCodeView() {
       mode: 'application/json',
       lineNumbers: true,
       tabSize: 2,
+      theme: htmlEl.getAttribute('data-theme') === 'dark' ? 'jsoniscoming-dark' : 'default',
     });
     cmEditor.on('change', () => {
       clearTimeout(cmDebounceTimer);
@@ -518,9 +561,11 @@ function applyCodeChange(text) {
     const parsed = JSON.parse(text);
     root = parsed;
     hideError();
+    commitHistory();
     renderTree();
     renderTable();
     renderGraph();
+    saveToStorage();
   } catch (e) {
     showError('Invalid JSON: ' + e.message);
   }
@@ -546,12 +591,90 @@ function hideError() {
   document.getElementById('errorBanner').style.display = 'none';
 }
 
+// ---------- Undo / redo ----------
+const undoBtn = document.getElementById('undoBtn');
+const redoBtn = document.getElementById('redoBtn');
+
+function commitHistory() {
+  if (suppressHistory) return;
+  const snapshot = JSON.stringify(root);
+  if (history[historyIndex] === snapshot) return;
+  history = history.slice(0, historyIndex + 1);
+  history.push(snapshot);
+  historyIndex = history.length - 1;
+  if (history.length > 100) { history.shift(); historyIndex--; }
+  updateUndoRedoButtons();
+}
+
+function updateUndoRedoButtons() {
+  undoBtn.disabled = historyIndex <= 0;
+  redoBtn.disabled = historyIndex >= history.length - 1;
+}
+
+function undo() {
+  if (historyIndex <= 0) return;
+  historyIndex--;
+  suppressHistory = true;
+  root = JSON.parse(history[historyIndex]);
+  renderTree(); renderTable(); renderGraph(); syncCodeView();
+  suppressHistory = false;
+  updateUndoRedoButtons();
+  saveToStorage();
+}
+
+function redo() {
+  if (historyIndex >= history.length - 1) return;
+  historyIndex++;
+  suppressHistory = true;
+  root = JSON.parse(history[historyIndex]);
+  renderTree(); renderTable(); renderGraph(); syncCodeView();
+  suppressHistory = false;
+  updateUndoRedoButtons();
+  saveToStorage();
+}
+
+undoBtn.addEventListener('click', undo);
+redoBtn.addEventListener('click', redo);
+
+document.addEventListener('keydown', (e) => {
+  if (root === null || document.getElementById('appScreen').style.display === 'none') return;
+  const meta = e.ctrlKey || e.metaKey;
+  if (meta && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if (meta && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
+});
+
+// ---------- Autosave ----------
+function saveToStorage() {
+  try {
+    if (root === null) { localStorage.removeItem(STORAGE_KEY); return; }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ fileName: currentFileName, data: root }));
+  } catch (e) {
+    // storage full/blocked - fail silently, editing still works without persistence
+  }
+}
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
 // ---------- Render orchestration ----------
-function renderAll(skipCode) {
+function renderAll() {
   renderTree();
   renderTable();
   renderGraph();
-  if (!skipCode) syncCodeView();
+  syncCodeView();
+}
+
+function afterChange() {
+  commitHistory();
+  renderAll();
+  saveToStorage();
 }
 
 // ---------- Tabs ----------
@@ -562,38 +685,60 @@ document.querySelectorAll('.view-tab').forEach((btn) => {
     document.querySelectorAll('.view-pane').forEach((p) => p.classList.remove('active'));
     document.getElementById('view' + btn.dataset.view).classList.add('active');
     if (btn.dataset.view === 'Code' && cmEditor) cmEditor.refresh();
+    if (btn.dataset.view === 'Graph') fitGraphToView(false);
   });
 });
 
-// ---------- Welcome screen: file / paste / new ----------
+// ---------- File reading helper ----------
+function readFileAsJSON(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        resolve({ data: JSON.parse(reader.result), name: file.name.replace(/\.[^.]+$/, '') + '.json' });
+      } catch (e) {
+        reject(e);
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsText(file);
+  });
+}
+
+// ---------- Welcome screen: file / paste / new / compare-on-upload ----------
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
 
 dropZone.addEventListener('click', () => fileInput.click());
 ['dragenter', 'dragover'].forEach((ev) => dropZone.addEventListener(ev, (e) => { e.preventDefault(); dropZone.classList.add('drag'); }));
 ['dragleave', 'drop'].forEach((ev) => dropZone.addEventListener(ev, (e) => { e.preventDefault(); dropZone.classList.remove('drag'); }));
-dropZone.addEventListener('drop', (e) => { if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
-fileInput.addEventListener('change', (e) => { if (e.target.files[0]) loadFile(e.target.files[0]); fileInput.value = ''; });
+dropZone.addEventListener('drop', (e) => handleWelcomeFiles(e.dataTransfer.files));
+fileInput.addEventListener('change', (e) => { handleWelcomeFiles(e.target.files); fileInput.value = ''; });
+
+function handleWelcomeFiles(fileList) {
+  const files = Array.from(fileList).filter((f) => f.name.toLowerCase().endsWith('.json') || f.type === 'application/json');
+  if (files.length === 0) return;
+  if (files.length >= 2) {
+    Promise.all([readFileAsJSON(files[0]), readFileAsJSON(files[1])])
+      .then(([a, b]) => startCompare(a.data, b.data, a.name, b.name))
+      .catch((e) => alert('One of the files is not valid JSON:\n' + e.message));
+  } else {
+    loadFile(files[0]);
+  }
+}
 
 function loadFile(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const parsed = JSON.parse(reader.result);
-      root = parsed;
-      currentFileName = file.name.replace(/\.[^.]+$/, '') + '.json';
-      openApp();
-    } catch (e) {
-      alert('This file is not valid JSON:\n' + e.message);
-    }
-  };
-  reader.readAsText(file);
+  readFileAsJSON(file).then(({ data, name }) => {
+    root = data;
+    currentFileName = name;
+    openApp(true);
+  }).catch((e) => alert('This file is not valid JSON:\n' + e.message));
 }
 
 document.getElementById('newJsonBtn').addEventListener('click', () => {
   root = {};
   currentFileName = 'untitled.json';
-  openApp();
+  openApp(true);
 });
 
 document.getElementById('pasteToggleBtn').addEventListener('click', () => {
@@ -606,27 +751,154 @@ document.getElementById('pasteLoadBtn').addEventListener('click', () => {
   try {
     root = JSON.parse(text);
     currentFileName = 'untitled.json';
-    openApp();
+    openApp(true);
   } catch (e) {
     alert('This is not valid JSON:\n' + e.message);
   }
 });
 
-function openApp() {
-  document.getElementById('welcomeScreen').style.display = 'none';
-  document.getElementById('appScreen').style.display = 'block';
-  document.getElementById('fileNameLabel').textContent = currentFileName;
-  hideError();
-  initCodeView();
-  renderAll(true);
+// ---------- Compare screen ----------
+let compareData = null; // { a, b, nameA, nameB }
+
+function flattenForDiff(value, path, out) {
+  out = out || {};
+  const type = typeOf(value);
+  if (type === 'object' || type === 'array') {
+    const keys = type === 'array' ? value.map((_, i) => i) : Object.keys(value);
+    if (keys.length === 0) out[path.join('.') || '(root)'] = type === 'array' ? '[]' : '{}';
+    else keys.forEach((k) => flattenForDiff(value[k], path.concat([k]), out));
+  } else {
+    out[path.join('.') || '(root)'] = type === 'string' ? value : JSON.stringify(value);
+  }
+  return out;
 }
 
+function computeDiff(a, b) {
+  const flatA = flattenForDiff(a, []);
+  const flatB = flattenForDiff(b, []);
+  const paths = Array.from(new Set(Object.keys(flatA).concat(Object.keys(flatB)))).sort();
+  return paths.map((p) => {
+    const inA = Object.prototype.hasOwnProperty.call(flatA, p);
+    const inB = Object.prototype.hasOwnProperty.call(flatB, p);
+    let status;
+    if (inA && inB) status = flatA[p] === flatB[p] ? 'same' : 'changed';
+    else if (inA) status = 'removed';
+    else status = 'added';
+    return { path: p, a: inA ? flatA[p] : '—', b: inB ? flatB[p] : '—', status };
+  });
+}
+
+function startCompare(a, b, nameA, nameB) {
+  compareData = { a, b, nameA, nameB };
+  document.getElementById('welcomeScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display = 'none';
+  document.getElementById('compareScreen').style.display = 'block';
+  document.getElementById('compareNameA').textContent = nameA;
+  document.getElementById('compareNameB').textContent = nameB;
+  document.getElementById('compareShowUnchanged').checked = false;
+  renderCompareTable();
+}
+
+function renderCompareTable() {
+  const container = document.getElementById('compareTableContainer');
+  const showUnchanged = document.getElementById('compareShowUnchanged').checked;
+  const diff = computeDiff(compareData.a, compareData.b).filter((row) => showUnchanged || row.status !== 'same');
+  container.innerHTML = '';
+  if (diff.length === 0) {
+    const p = document.createElement('p');
+    p.className = 'graph-details-empty';
+    p.textContent = 'No differences found.';
+    container.appendChild(p);
+    return;
+  }
+  const table = document.createElement('table');
+  table.className = 'compare-table';
+  const thead = document.createElement('tr');
+  ['Path', 'File A', 'File B'].forEach((h) => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    thead.appendChild(th);
+  });
+  table.appendChild(thead);
+  diff.forEach((row) => {
+    const tr = document.createElement('tr');
+    tr.className = 'status-' + row.status;
+    const pathTd = document.createElement('td');
+    pathTd.textContent = row.path;
+    const aTd = document.createElement('td');
+    aTd.className = 'val-a';
+    aTd.textContent = row.a;
+    const bTd = document.createElement('td');
+    bTd.className = 'val-b';
+    bTd.textContent = row.b;
+    tr.appendChild(pathTd);
+    tr.appendChild(aTd);
+    tr.appendChild(bTd);
+    table.appendChild(tr);
+  });
+  container.appendChild(table);
+}
+
+document.getElementById('compareShowUnchanged').addEventListener('change', renderCompareTable);
+
+document.getElementById('useABtn').addEventListener('click', () => {
+  root = compareData.a;
+  currentFileName = compareData.nameA;
+  finishCompare();
+});
+document.getElementById('useBBtn').addEventListener('click', () => {
+  root = compareData.b;
+  currentFileName = compareData.nameB;
+  finishCompare();
+});
+document.getElementById('cancelCompareBtn').addEventListener('click', () => {
+  compareData = null;
+  document.getElementById('compareScreen').style.display = 'none';
+  if (root !== null) document.getElementById('appScreen').style.display = 'block';
+  else document.getElementById('welcomeScreen').style.display = 'block';
+});
+
+function finishCompare() {
+  compareData = null;
+  document.getElementById('compareScreen').style.display = 'none';
+  openApp(true);
+}
+
+// ---------- App screen ----------
+function openApp(resetHistory) {
+  document.getElementById('welcomeScreen').style.display = 'none';
+  document.getElementById('compareScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display = 'block';
+  document.getElementById('fileNameLabel').value = currentFileName;
+  hideError();
+  hidePostLoadPrompt();
+  if (resetHistory) {
+    history = [JSON.stringify(root)];
+    historyIndex = 0;
+  }
+  initCodeView();
+  renderAll();
+  updateUndoRedoButtons();
+  saveToStorage();
+}
+
+document.getElementById('fileNameLabel').addEventListener('change', (e) => {
+  let name = e.target.value.trim() || 'untitled.json';
+  if (!name.toLowerCase().endsWith('.json')) name += '.json';
+  currentFileName = name;
+  e.target.value = name;
+  saveToStorage();
+});
+
 document.getElementById('backBtn').addEventListener('click', () => {
-  if (!confirm('Close this JSON? Anything not downloaded will be lost.')) return;
+  if (!confirm('Close this file? Its autosave will be cleared (download first if you want to keep it).')) return;
   document.getElementById('appScreen').style.display = 'none';
   document.getElementById('welcomeScreen').style.display = 'block';
   root = null;
   cmEditor = null;
+  history = [];
+  historyIndex = -1;
+  saveToStorage();
 });
 
 document.getElementById('downloadBtn').addEventListener('click', () => {
@@ -643,10 +915,61 @@ document.getElementById('copyBtn').addEventListener('click', async () => {
   const btn = document.getElementById('copyBtn');
   try {
     await navigator.clipboard.writeText(JSON.stringify(root, null, 2));
-    const original = btn.textContent;
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = original; }, 1200);
+    btn.classList.add('mini-btn-flash');
+    setTimeout(() => btn.classList.remove('mini-btn-flash'), 800);
   } catch (e) {
     alert('Could not copy automatically. Please copy manually from the Code view.');
   }
 });
+
+// ---------- Post-load dropzone: replace or compare ----------
+const postLoadDropZone = document.getElementById('postLoadDropZone');
+const postLoadFileInput = document.getElementById('postLoadFileInput');
+let pendingPostLoadFile = null;
+
+postLoadDropZone.addEventListener('click', () => postLoadFileInput.click());
+['dragenter', 'dragover'].forEach((ev) => postLoadDropZone.addEventListener(ev, (e) => { e.preventDefault(); postLoadDropZone.classList.add('drag'); }));
+['dragleave', 'drop'].forEach((ev) => postLoadDropZone.addEventListener(ev, (e) => { e.preventDefault(); postLoadDropZone.classList.remove('drag'); }));
+postLoadDropZone.addEventListener('drop', (e) => { if (e.dataTransfer.files[0]) handlePostLoadFile(e.dataTransfer.files[0]); });
+postLoadFileInput.addEventListener('change', (e) => { if (e.target.files[0]) handlePostLoadFile(e.target.files[0]); postLoadFileInput.value = ''; });
+
+function handlePostLoadFile(file) {
+  readFileAsJSON(file).then(({ data, name }) => {
+    pendingPostLoadFile = { data, name };
+    document.getElementById('postLoadPromptText').textContent = '"' + name + '" — what should I do with it?';
+    document.getElementById('postLoadPrompt').style.display = 'flex';
+  }).catch((e) => alert('This file is not valid JSON:\n' + e.message));
+}
+
+function hidePostLoadPrompt() {
+  pendingPostLoadFile = null;
+  document.getElementById('postLoadPrompt').style.display = 'none';
+}
+
+document.getElementById('postLoadReplaceBtn').addEventListener('click', () => {
+  if (!pendingPostLoadFile) return;
+  root = pendingPostLoadFile.data;
+  currentFileName = pendingPostLoadFile.name;
+  hidePostLoadPrompt();
+  openApp(true);
+});
+document.getElementById('postLoadCompareBtn').addEventListener('click', () => {
+  if (!pendingPostLoadFile) return;
+  const oldRoot = root;
+  const oldName = currentFileName;
+  const newData = pendingPostLoadFile.data;
+  const newName = pendingPostLoadFile.name;
+  hidePostLoadPrompt();
+  startCompare(oldRoot, newData, oldName, newName);
+});
+document.getElementById('postLoadCancelBtn').addEventListener('click', hidePostLoadPrompt);
+
+// ---------- Resume autosaved session on load ----------
+(function resumeSession() {
+  const saved = loadFromStorage();
+  if (saved && saved.data !== undefined) {
+    root = saved.data;
+    currentFileName = saved.fileName || 'untitled.json';
+    openApp(true);
+  }
+})();
