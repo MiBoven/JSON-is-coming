@@ -558,7 +558,7 @@ function initCodeView() {
 
 function applyCodeChange(text) {
   try {
-    const parsed = JSON.parse(text);
+    const parsed = parseLenientJSON(text);
     root = parsed;
     hideError();
     commitHistory();
@@ -689,13 +689,229 @@ document.querySelectorAll('.view-tab').forEach((btn) => {
   });
 });
 
-// ---------- File reading helper ----------
-function readFileAsJSON(file) {
+// ---------- Lenient JSON parser (JSONC-style: comments + trailing commas) ----------
+// Deliberately does NOT attempt unquoted keys or single-quoted strings: those
+// need a full tokenizer to handle safely, and a naive regex risks corrupting
+// string content. Comments and trailing commas cover the common real-world
+// case (the tsconfig.json / VS Code settings style of "JSON with comments").
+function stripJsonComments(text) {
+  let out = '';
+  let inStr = false, strChar = '', inLineComment = false, inBlockComment = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const next = text[i + 1];
+    if (inLineComment) {
+      if (c === '\n') { inLineComment = false; out += c; }
+      continue;
+    }
+    if (inBlockComment) {
+      if (c === '*' && next === '/') { inBlockComment = false; i++; }
+      continue;
+    }
+    if (inStr) {
+      out += c;
+      if (c === '\\') { out += next; i++; continue; }
+      if (c === strChar) inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; strChar = c; out += c; continue; }
+    if (c === '/' && next === '/') { inLineComment = true; i++; continue; }
+    if (c === '/' && next === '*') { inBlockComment = true; i++; continue; }
+    out += c;
+  }
+  return out;
+}
+
+function stripTrailingCommas(text) {
+  return text.replace(/,(\s*[}\]])/g, '$1');
+}
+
+function parseLenientJSON(text) {
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    return JSON.parse(stripTrailingCommas(stripJsonComments(text)));
+  }
+}
+
+// ---------- CSV converter ----------
+// Nested objects are flattened with dot-notation columns (user.name).
+// Nested arrays inside a row are kept as a JSON string in the cell — CSV
+// has no native way to represent a variable-length list inside one cell.
+function flattenForCSV(value, prefix, out) {
+  out = out || {};
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    const keys = Object.keys(value);
+    if (keys.length === 0) out[prefix || 'value'] = '{}';
+    else keys.forEach((k) => flattenForCSV(value[k], prefix ? prefix + '.' + k : k, out));
+  } else if (Array.isArray(value)) {
+    out[prefix || 'value'] = JSON.stringify(value);
+  } else {
+    out[prefix || 'value'] = value === null ? '' : value;
+  }
+  return out;
+}
+
+function csvEscape(v) {
+  const s = v === undefined || v === null ? '' : String(v);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function jsonToCSV(data) {
+  const rows = Array.isArray(data) ? data : [data];
+  const flatRows = rows.map((r) => flattenForCSV(r, ''));
+  const columns = [];
+  flatRows.forEach((fr) => Object.keys(fr).forEach((k) => { if (!columns.includes(k)) columns.push(k); }));
+  const lines = [columns.map(csvEscape).join(',')];
+  flatRows.forEach((fr) => lines.push(columns.map((c) => csvEscape(fr[c])).join(',')));
+  return lines.join('\r\n');
+}
+
+function coercePlainValue(v) {
+  if (v === '') return '';
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  if (v === 'null') return null;
+  if (/^-?\d+(\.\d+)?$/.test(v)) return Number(v);
+  if ((v[0] === '{' && v[v.length - 1] === '}') || (v[0] === '[' && v[v.length - 1] === ']')) {
+    try { return JSON.parse(v); } catch (e) { /* keep as string */ }
+  }
+  return v;
+}
+
+function parseCSVRows(text) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], next = text[i + 1];
+    if (inQuotes) {
+      if (c === '"' && next === '"') { field += '"'; i++; }
+      else if (c === '"') inQuotes = false;
+      else field += c;
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ',') {
+      row.push(field); field = '';
+    } else if (c === '\r') {
+      // skip, \n handles the line break
+    } else if (c === '\n') {
+      row.push(field); rows.push(row); row = []; field = '';
+    } else {
+      field += c;
+    }
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function setDotPath(obj, dotPath, value) {
+  const parts = dotPath.split('.');
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (typeof cur[parts[i]] !== 'object' || cur[parts[i]] === null) cur[parts[i]] = {};
+    cur = cur[parts[i]];
+  }
+  cur[parts[parts.length - 1]] = coercePlainValue(value);
+}
+
+function csvToJSON(text) {
+  const rows = parseCSVRows(text).filter((r) => !(r.length === 1 && r[0] === ''));
+  if (rows.length === 0) return [];
+  const header = rows[0];
+  return rows.slice(1).map((r) => {
+    const obj = {};
+    header.forEach((col, i) => setDotPath(obj, col, r[i] !== undefined ? r[i] : ''));
+    return obj;
+  });
+}
+
+// ---------- XML converter (uses the browser's native DOMParser/XMLSerializer) ----------
+// Note: XML can't natively distinguish "one item" from "an array of one item",
+// so a single-item array round-trips back as a plain object. Attribute-based
+// XML isn't produced or read — everything becomes nested elements.
+function sanitizeTagName(k) {
+  let name = String(k).replace(/[^a-zA-Z0-9_.-]/g, '_');
+  if (!/^[a-zA-Z_]/.test(name)) name = '_' + name;
+  return name;
+}
+
+function appendXMLChild(doc, parentEl, tagName, value) {
+  const type = typeOf(value);
+  if (type === 'array') {
+    value.forEach((item) => appendXMLChild(doc, parentEl, tagName, item));
+    return;
+  }
+  const el = doc.createElement(tagName);
+  if (type === 'object') {
+    Object.keys(value).forEach((k) => appendXMLChild(doc, el, sanitizeTagName(k), value[k]));
+  } else if (type !== 'null') {
+    el.textContent = String(value);
+  }
+  parentEl.appendChild(el);
+}
+
+function jsonToXML(data) {
+  const doc = document.implementation.createDocument(null, 'root', null);
+  const type = typeOf(data);
+  if (type === 'object') {
+    Object.keys(data).forEach((k) => appendXMLChild(doc, doc.documentElement, sanitizeTagName(k), data[k]));
+  } else if (type === 'array') {
+    data.forEach((item) => appendXMLChild(doc, doc.documentElement, 'item', item));
+  } else if (type !== 'null') {
+    doc.documentElement.textContent = String(data);
+  }
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(doc);
+}
+
+function xmlNodeToJSON(el) {
+  const children = Array.from(el.children);
+  if (children.length === 0) return coercePlainValue(el.textContent || '');
+  const groups = {};
+  children.forEach((c) => { (groups[c.tagName] = groups[c.tagName] || []).push(c); });
+  const obj = {};
+  Object.keys(groups).forEach((tag) => {
+    const els = groups[tag];
+    obj[tag] = els.length > 1 ? els.map(xmlNodeToJSON) : xmlNodeToJSON(els[0]);
+  });
+  return obj;
+}
+
+function xmlToJSON(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  const errorNode = doc.querySelector('parsererror');
+  if (errorNode) throw new Error('Invalid XML: ' + errorNode.textContent.slice(0, 200));
+  return xmlNodeToJSON(doc.documentElement);
+}
+
+// ---------- Multi-format import helpers ----------
+const SUPPORTED_IMPORT_EXT = '.json,.json5,.jsonc,.csv,.xml,.yaml,.yml';
+
+function detectFormat(filename) {
+  const ext = filename.toLowerCase().split('.').pop();
+  if (ext === 'csv') return 'csv';
+  if (ext === 'xml') return 'xml';
+  if (ext === 'yaml' || ext === 'yml') return 'yaml';
+  return 'json'; // json, json5, jsonc all go through the lenient JSON parser
+}
+
+function parseByFormat(text, format) {
+  if (format === 'csv') return csvToJSON(text);
+  if (format === 'xml') return xmlToJSON(text);
+  if (format === 'yaml') {
+    if (!window.jsyaml) throw new Error('YAML support needs js-yaml in vendor/js-yaml/ (see README).');
+    return window.jsyaml.load(text);
+  }
+  return parseLenientJSON(text);
+}
+
+function readFileAsData(file) {
   return new Promise((resolve, reject) => {
+    const format = detectFormat(file.name);
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        resolve({ data: JSON.parse(reader.result), name: file.name.replace(/\.[^.]+$/, '') + '.json' });
+        resolve({ data: parseByFormat(reader.result, format), name: file.name.replace(/\.[^.]+$/, '') + '.json', format });
       } catch (e) {
         reject(e);
       }
@@ -716,23 +932,23 @@ dropZone.addEventListener('drop', (e) => handleWelcomeFiles(e.dataTransfer.files
 fileInput.addEventListener('change', (e) => { handleWelcomeFiles(e.target.files); fileInput.value = ''; });
 
 function handleWelcomeFiles(fileList) {
-  const files = Array.from(fileList).filter((f) => f.name.toLowerCase().endsWith('.json') || f.type === 'application/json');
+  const files = Array.from(fileList).filter((f) => /\.(json5?|jsonc|csv|xml|ya?ml)$/i.test(f.name));
   if (files.length === 0) return;
   if (files.length >= 2) {
-    Promise.all([readFileAsJSON(files[0]), readFileAsJSON(files[1])])
+    Promise.all([readFileAsData(files[0]), readFileAsData(files[1])])
       .then(([a, b]) => startCompare(a.data, b.data, a.name, b.name))
-      .catch((e) => alert('One of the files is not valid JSON:\n' + e.message));
+      .catch((e) => alert('One of the files could not be read:\n' + e.message));
   } else {
     loadFile(files[0]);
   }
 }
 
 function loadFile(file) {
-  readFileAsJSON(file).then(({ data, name }) => {
+  readFileAsData(file).then(({ data, name }) => {
     root = data;
     currentFileName = name;
     openApp(true);
-  }).catch((e) => alert('This file is not valid JSON:\n' + e.message));
+  }).catch((e) => alert('This file could not be read:\n' + e.message));
 }
 
 document.getElementById('newJsonBtn').addEventListener('click', () => {
@@ -749,7 +965,7 @@ document.getElementById('pasteToggleBtn').addEventListener('click', () => {
 document.getElementById('pasteLoadBtn').addEventListener('click', () => {
   const text = document.getElementById('pasteText').value;
   try {
-    root = JSON.parse(text);
+    root = parseLenientJSON(text);
     currentFileName = 'untitled.json';
     openApp(true);
   } catch (e) {
@@ -934,11 +1150,11 @@ postLoadDropZone.addEventListener('drop', (e) => { if (e.dataTransfer.files[0]) 
 postLoadFileInput.addEventListener('change', (e) => { if (e.target.files[0]) handlePostLoadFile(e.target.files[0]); postLoadFileInput.value = ''; });
 
 function handlePostLoadFile(file) {
-  readFileAsJSON(file).then(({ data, name }) => {
+  readFileAsData(file).then(({ data, name }) => {
     pendingPostLoadFile = { data, name };
     document.getElementById('postLoadPromptText').textContent = '"' + name + '" — what should I do with it?';
     document.getElementById('postLoadPrompt').style.display = 'flex';
-  }).catch((e) => alert('This file is not valid JSON:\n' + e.message));
+  }).catch((e) => alert('This file could not be read:\n' + e.message));
 }
 
 function hidePostLoadPrompt() {
@@ -963,6 +1179,99 @@ document.getElementById('postLoadCompareBtn').addEventListener('click', () => {
   startCompare(oldRoot, newData, oldName, newName);
 });
 document.getElementById('postLoadCancelBtn').addEventListener('click', hidePostLoadPrompt);
+
+// ---------- Header menu: Import / Export / About ----------
+const menuToggle = document.getElementById('menuToggle');
+const menuDropdown = document.getElementById('menuDropdown');
+const menuExportToggle = document.getElementById('menuExportToggle');
+const menuExportSubmenu = document.getElementById('menuExportSubmenu');
+const menuImportInput = document.getElementById('menuImportInput');
+
+function closeMenu() {
+  menuDropdown.style.display = 'none';
+  menuExportSubmenu.style.display = 'none';
+}
+
+menuToggle.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const isOpen = menuDropdown.style.display === 'flex';
+  closeMenu();
+  if (!isOpen) menuDropdown.style.display = 'flex';
+});
+document.addEventListener('click', (e) => {
+  if (!menuDropdown.contains(e.target) && e.target !== menuToggle) closeMenu();
+});
+
+document.getElementById('menuImportBtn').addEventListener('click', () => {
+  closeMenu();
+  menuImportInput.click();
+});
+
+menuImportInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  menuImportInput.value = '';
+  if (!file) return;
+  readFileAsData(file).then(({ data, name }) => {
+    if (root === null) {
+      root = data;
+      currentFileName = name;
+      openApp(true);
+    } else {
+      pendingPostLoadFile = { data, name };
+      document.getElementById('postLoadPromptText').textContent = '"' + name + '" — what should I do with it?';
+      document.getElementById('postLoadPrompt').style.display = 'flex';
+    }
+  }).catch((e) => alert('This file could not be read:\n' + e.message));
+});
+
+menuExportToggle.addEventListener('click', (e) => {
+  e.stopPropagation();
+  menuExportSubmenu.style.display = menuExportSubmenu.style.display === 'flex' ? 'none' : 'flex';
+});
+
+document.querySelectorAll('.menu-subitem').forEach((btn) => {
+  btn.addEventListener('click', () => exportAs(btn.dataset.format));
+});
+
+function baseName() {
+  return currentFileName.replace(/\.json$/i, '');
+}
+
+function exportAs(format) {
+  if (root === null) { alert('Load or create a JSON first.'); closeMenu(); return; }
+  let content, mime, ext;
+  try {
+    if (format === 'json') { content = JSON.stringify(root, null, 2); mime = 'application/json'; ext = 'json'; }
+    else if (format === 'csv') { content = jsonToCSV(root); mime = 'text/csv'; ext = 'csv'; }
+    else if (format === 'xml') { content = jsonToXML(root); mime = 'application/xml'; ext = 'xml'; }
+    else if (format === 'yaml') {
+      if (!window.jsyaml) { alert('YAML export needs js-yaml in vendor/js-yaml/ (see README).'); closeMenu(); return; }
+      content = window.jsyaml.dump(root); mime = 'text/yaml'; ext = 'yaml';
+    } else {
+      return;
+    }
+  } catch (e) {
+    alert('Could not export as ' + format.toUpperCase() + ':\n' + e.message);
+    closeMenu();
+    return;
+  }
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = baseName() + '.' + ext;
+  a.click();
+  URL.revokeObjectURL(url);
+  closeMenu();
+}
+
+const aboutModalBg = document.getElementById('aboutModalBg');
+document.getElementById('menuAboutBtn').addEventListener('click', () => {
+  closeMenu();
+  aboutModalBg.classList.add('open');
+});
+document.getElementById('aboutCloseBtn').addEventListener('click', () => aboutModalBg.classList.remove('open'));
+aboutModalBg.addEventListener('click', (e) => { if (e.target === aboutModalBg) aboutModalBg.classList.remove('open'); });
 
 // ---------- Resume autosaved session on load ----------
 (function resumeSession() {

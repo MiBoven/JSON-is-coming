@@ -8,10 +8,10 @@ A privacy-friendly web app for reading, editing, and creating JSON files — ent
 
 ## Features
 
-- Load a JSON file (upload or drag & drop, file picker opens by default), paste raw JSON text instead (hidden by default, one tap away), or start a brand-new empty JSON from scratch
+- Load a file (upload, drag & drop, or the menu's Import) in **JSON, JSON5/JSONC (comments + trailing commas), CSV, XML, or YAML** — format is auto-detected from the file extension — paste raw JSON text instead (hidden by default, one tap away), or start a brand-new empty JSON from scratch
 - Four fully synchronized, fully editable views — edit in any one of them and the others update instantly:
   - **Tree** — collapsible tree with inline key/value editing, a type selector per node (string, number, boolean, null, object, array), and buttons to add or delete keys/items
-  - **Code** — a text editor showing the raw, formatted JSON, with live validation as you type and a dark theme that follows the app's Dark Mode (see [Code view](#code-view) below)
+  - **Code** — a text editor showing the raw, formatted JSON, with live validation as you type (comments and trailing commas are tolerated) and a dark theme that follows the app's Dark Mode (see [Code view](#code-view) below)
   - **Graph** — an auto-laid-out node diagram of the whole structure, automatically zoomed to fit the whole tree with manual +/−/Fit controls; tap a node to see and edit it in the details panel below the graph
   - **Table** — nested tables: objects and arrays render as tables, and any object/array *value* renders as another table inside its cell, however deep it goes
 - Changing a node's type (e.g. turning a string into an object) resets it to a sensible empty default for that type, so you can build out structure from nothing
@@ -19,17 +19,36 @@ A privacy-friendly web app for reading, editing, and creating JSON files — ent
 - Click the filename in the toolbar to rename the file
 - **Undo/redo** with full multi-step history (toolbar buttons, plus Ctrl/Cmd+Z and Ctrl/Cmd+Y or Shift+Ctrl/Cmd+Z)
 - **Autosave**: your file is saved to `localStorage` after every change and restored automatically next time you open the app — even after closing the tab or the whole browser
-- **Compare two files**: select or drop two JSON files at once on the welcome screen (or drop a second file into the small dropzone that stays above the toolbar once a file is loaded, and choose "Compare" instead of "Replace") to see a path-by-path diff, color-coded by added/removed/changed, with a toggle to also show unchanged values; pick either file to continue editing it
+- **Compare two files**: select or drop two files at once on the welcome screen (any mix of the supported formats — everything is parsed to the same internal structure first), or drop a second file into the small dropzone that stays above the toolbar once a file is loaded and choose "Compare" instead of "Replace", to see a path-by-path diff, color-coded by added/removed/changed, with a toggle to also show unchanged values; pick either file to continue editing it
+- **Menu (⋮, top right)**: Import (same auto-detecting multi-format import as the dropzones), Export (choose JSON, CSV, XML, or YAML), and About (app name, version)
 - Invalid JSON (typed in the Code view, or pasted) is caught immediately with an error message — nothing is lost, you just get pointed at the mistake
-- Download the result as a `.json` file, or copy it straight to the clipboard (icon buttons in the toolbar)
+- Quick Copy/Download icon buttons in the toolbar always work with plain JSON; the menu's Export offers all four formats
 - "Close file" clears the autosaved session for that file — download first if you want to keep it
 - Dark mode by default, with a light mode toggle, and a fullscreen button
 - Mobile-first layout — all four views and every action are usable from a phone
 - 100% client-side: no backend, no analytics, no file ever leaves the device
 
+## Format conventions & known limitations
+
+Converting between JSON and other formats always involves some trade-offs — here's exactly what to expect:
+
+- **JSON5/JSONC**: only comments (`//` and `/* */`) and trailing commas are tolerated. Unquoted keys and single-quoted strings are deliberately **not** supported — safely telling those apart from ordinary text inside a string needs a full parser, and a shortcut here risks silently corrupting data. Quote your keys and use double quotes and you're fine.
+- **CSV**: works best for an array of similar objects (one row each). Nested objects become dot-notation columns (`user.address.city`). Nested arrays are stored as a JSON string in the cell (e.g. `[1,2,3]`) and are parsed back into a real array on import.
+- **XML**: objects become nested elements, arrays become the element repeated once per item (e.g. three `tags` become three `<tags>` elements), values become text content. XML can't natively tell "one item" from "an array containing one item" — a single-item array will come back as a plain object if you round-trip it. No XML attributes are read or written, only elements.
+- **YAML**: needs a small vendored library (see below) since a correct YAML parser isn't something to hand-roll.
+
 ## Roadmap
 
-**0.3.0 (planned):** additional import/export formats — CSV, XML, YAML (via a small vendored `js-yaml`), JSON5/JSONC (hand-written tolerant parser), and Excel/.xlsx + OpenOffice/.ods support via a vendored [SheetJS](https://sheetjs.com/) library. Since that library is ~1 MB, it will be lazy-loaded on demand only when an XLSX/ODS import or export is actually triggered, with a heads-up that it needs a moment to download first.
+**Future:** Excel (.xlsx) and OpenOffice (.ods) support was considered for 0.3.0 and intentionally left out (it needs a ~1 MB vendored library just for two formats) — parked for a possible later version.
+
+## Vendoring js-yaml (for YAML import/export)
+
+Same idea as CodeMirror: download the built file once and commit it, don't link to a CDN at runtime. Unlike CodeMirror, js-yaml isn't mirrored on cdnjs — it's distributed via jsDelivr (which mirrors npm packages directly).
+
+1. Open `https://cdn.jsdelivr.net/npm/js-yaml@4.1.1/dist/js-yaml.min.js` and save it as `js-yaml.js` into `vendor/js-yaml/` at the repo root.
+2. (Check [npmjs.com/package/js-yaml](https://www.npmjs.com/package/js-yaml) for a newer 4.x version if you like, and swap the version number in the URL — any 4.x release works the same way.)
+
+The bundle exposes a global `jsyaml` object (`jsyaml.load(text)` / `jsyaml.dump(data)`), which is exactly what this app calls. If the file is missing, YAML import/export shows a message pointing here instead of failing silently — JSON, CSV, and XML work regardless.
 
 ## Code view
 
@@ -88,6 +107,15 @@ If any file is missing, browsers just silently skip it — nothing breaks, you'l
 Works in all modern browsers (Chrome, Safari, Firefox, Edge). Uses `navigator.clipboard` for the Copy button, `Blob`/`URL.createObjectURL` for downloads, and inline SVG for the Graph view — all standard in current browsers.
 
 ## Changelog
+
+### 0.3.0 — 2026-09-03
+- New header menu (⋮, top right): Import (auto-detecting multi-format), Export (JSON/CSV/XML/YAML), and About
+- Import and the drag/drop zones now accept JSON, JSON5/JSONC, CSV, XML, and YAML, auto-detected by file extension
+- The Code view and pasted JSON now tolerate comments and trailing commas (JSONC-style)
+- Added CSV export/import (nested objects via dot-notation columns) and XML export/import (via the browser's native DOMParser/XMLSerializer, no extra library needed)
+- Added optional YAML support via a vendored `js-yaml` (see below) — everything else works without it
+- Compare now works across mixed formats too, since every format is parsed down to the same internal structure first
+- Excel/.xlsx and OpenOffice/.ods were considered and intentionally left out — see Roadmap
 
 ### 0.2.0 — 2026-09-03
 - Undo/redo with full multi-step history, keyboard shortcuts included
