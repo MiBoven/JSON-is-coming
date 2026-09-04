@@ -108,6 +108,9 @@ Works in all modern browsers (Chrome, Safari, Firefox, Edge). Uses `navigator.cl
 
 ## Changelog
 
+### 0.3.1 — 2026-09-04
+- Fixed: the `js-yaml` vendor file was never actually loaded by the page — `index.html` was missing its `<script>` tag, so YAML import/export kept showing the "missing library" message even after the file was correctly placed in `vendor/js-yaml/`
+
 ### 0.3.0 — 2026-09-03
 - New header menu (⋮, top right): Import (auto-detecting multi-format), Export (JSON/CSV/XML/YAML), and About
 - Import and the drag/drop zones now accept JSON, JSON5/JSONC, CSV, XML, and YAML, auto-detected by file extension
